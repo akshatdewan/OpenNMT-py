@@ -13,6 +13,7 @@ from onmt.io.TextDataset import TextDataset
 from onmt.io.ImageDataset import ImageDataset
 from onmt.io.AudioDataset import AudioDataset
 
+from memory_profiler import profile
 
 def _getstate(self):
     return dict(self.__dict__, stoi=dict(self.stoi))
@@ -223,9 +224,10 @@ def _build_field_vocab(field, counter, **kwargs):
         tok for tok in [field.unk_token, field.pad_token, field.init_token,
                         field.eos_token]
         if tok is not None))
+    print(counter)
     field.vocab = field.vocab_cls(counter, specials=specials, **kwargs)
 
-
+#@profile
 def build_vocab(train_dataset_files, fields, data_type, share_vocab,
                 src_vocab_path, src_vocab_size, src_words_min_frequency,
                 tgt_vocab_path, tgt_vocab_size, tgt_words_min_frequency):
@@ -250,7 +252,6 @@ def build_vocab(train_dataset_files, fields, data_type, share_vocab,
     counter = {}
     for k in fields:
         counter[k] = Counter()
-
     # Load vocabulary
     src_vocab = None
     if len(src_vocab_path) > 0:
@@ -273,20 +274,27 @@ def build_vocab(train_dataset_files, fields, data_type, share_vocab,
             for line in f:
                 word = line.strip().split()[0]
                 tgt_vocab.add(word)
-
     for path in train_dataset_files:
         dataset = torch.load(path)
         print(" * reloading %s." % path)
         for ex in dataset.examples:
-            for k in fields:
-                val = getattr(ex, k, None)
-                if val is not None and not fields[k].sequential:
+            if data_type == 'text':
+                for k in fields:
+                    val = getattr(ex, k, None)
+                    if val is not None and not fields[k].sequential:
+                        val = [val]
+                    elif k == 'src' and src_vocab:
+                        val = [item for item in val if item in src_vocab]
+                    elif k == 'tgt' and tgt_vocab:
+                        val = [item for item in val if item in tgt_vocab]
+                    counter[k].update(val)
+            else:
+                val = getattr(ex, 'tgt', None)
+                if val is not None and not fields['tgt'].sequential:
                     val = [val]
-                elif k == 'src' and src_vocab:
-                    val = [item for item in val if item in src_vocab]
-                elif k == 'tgt' and tgt_vocab:
+                elif tgt_vocab:
                     val = [item for item in val if item in tgt_vocab]
-                counter[k].update(val)
+                counter['tgt'].update(val)
 
     _build_field_vocab(fields["tgt"], counter["tgt"],
                        max_size=tgt_vocab_size,
@@ -353,7 +361,6 @@ def _make_examples_nfeats_tpl(data_type, src_path, src_dir,
                 normalize_audio)
 
     return src_examples_iter, num_src_feats
-
 
 class OrderedIterator(torchtext.data.Iterator):
     def create_batches(self):

@@ -11,11 +11,11 @@ import onmt.ModelConstructor
 import onmt.translate.Beam
 import onmt.io
 import onmt.opts
-
+import time
 
 def make_translator(opt, report_score=True, out_file=None):
     if out_file is None:
-        out_file = codecs.open(opt.output, 'w', 'utf-8')
+        out_file = codecs.open(opt.output, 'w+', 'utf-8')
 
     if opt.gpu > -1:
         torch.cuda.set_device(opt.gpu)
@@ -35,7 +35,7 @@ def make_translator(opt, report_score=True, out_file=None):
     kwargs = {k: getattr(opt, k)
               for k in ["beam_size", "n_best", "max_length", "min_length",
                         "stepwise_penalty", "block_ngram_repeat",
-                        "ignore_when_blocking", "dump_beam",
+                        "ignore_when_blocking", "dump_beam", "report_bleu",
                         "data_type", "replace_unk", "gpu", "verbose"]}
 
     translator = Translator(model, fields, global_scorer=scorer,
@@ -85,7 +85,7 @@ class Translator(object):
                  data_type="text",
                  replace_unk=False,
                  report_score=True,
-                 report_bleu=False,
+                 report_bleu=True,
                  report_rouge=False,
                  verbose=False,
                  out_file=None):
@@ -139,7 +139,7 @@ class Translator(object):
                                      window_stride=self.window_stride,
                                      window=self.window,
                                      use_filter_pred=self.use_filter_pred)
-
+        start_time = time.time()
         data_iter = onmt.io.OrderedIterator(
             dataset=data, device=self.gpu,
             batch_size=batch_size, train=False, sort=False,
@@ -201,6 +201,7 @@ class Translator(object):
             if tgt_path is not None:
                 self._report_score('GOLD', gold_score_total, gold_words_total)
                 if self.report_bleu:
+                    print('report bleu')
                     self._report_bleu(tgt_path)
                 if self.report_rouge:
                     self._report_rouge(tgt_path)
@@ -209,6 +210,7 @@ class Translator(object):
             import json
             json.dump(self.translator.beam_accum,
                       codecs.open(self.dump_beam, 'w', 'utf-8'))
+        print(time.time()-start_time)
         return all_scores
 
     def translate_batch(self, batch, data):
@@ -287,7 +289,6 @@ class Translator(object):
         for i in range(self.max_length):
             if all((b.done() for b in beam)):
                 break
-
             # Construct batch x beam_size nxt words.
             # Get all the pending current beam words and arrange for forward.
             inp = var(torch.stack([b.get_current_state() for b in beam])
@@ -307,6 +308,7 @@ class Translator(object):
             dec_out, dec_states, attn = self.model.decoder(
                 inp, memory_bank, dec_states, memory_lengths=memory_lengths)
             dec_out = dec_out.squeeze(0)
+            
             # dec_out: beam x rnn_size
 
             # (b) Compute a vector of batch x beam word scores.
@@ -385,7 +387,7 @@ class Translator(object):
             tgt = tgt.unsqueeze(1)
             scores = out.data.gather(1, tgt)
             scores.masked_fill_(tgt.eq(tgt_pad), 0)
-            gold_scores += scores
+            gold_scores += scores.reshape(gold_scores.shape)
         return gold_scores
 
     def _report_score(self, name, score_total, words_total):
@@ -395,14 +397,15 @@ class Translator(object):
 
     def _report_bleu(self, tgt_path):
         import subprocess
-        path = os.path.split(os.path.realpath(__file__))[0]
-        print()
+        base_dir = os.path.abspath(__file__ + "/../../..")
+        tgt_path = os.path.join(os.getcwd(), tgt_path)
+        # Rollback pointer to the beginning. 
+        self.out_file.seek(0) 
 
-        res = subprocess.check_output("perl %s/tools/multi-bleu.perl %s"
-                                      % (path, tgt_path, self.output),
-                                      stdin=self.out_file,
-                                      shell=True).decode("utf-8")
-
+        res = subprocess.check_output("perl %s/tools/multi-bleu.perl %s" 
+                                      % (base_dir, tgt_path),
+                                      stdin=self.out_file, 
+                                      shell=True).decode("utf-8") 
         print(">> " + res.strip())
 
     def _report_rouge(self, tgt_path):

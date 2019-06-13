@@ -132,7 +132,7 @@ def load_test_model(opt, dummy_opt):
     return fields, model, model_opt
 
 
-def make_base_model(model_opt, fields, gpu, checkpoint=None):
+def make_base_model(model_opt, fields, gpu, checkpoint=None, pretrained_encoder=None, pretrained_decoder=None):
     """
     Args:
         model_opt: the option loaded from checkpoint.
@@ -203,6 +203,15 @@ def make_base_model(model_opt, fields, gpu, checkpoint=None):
         print('Loading model parameters.')
         model.load_state_dict(checkpoint['model'])
         generator.load_state_dict(checkpoint['generator'])
+    
+    ## Ha NGUYEN - modified 140618
+    elif pretrained_encoder is not None or pretrained_decoder is not None:
+        if pretrained_encoder is not None:
+            print('Loading pretrained encoder parameters.')
+            model.encoder.load_state_dict(pretrained_encoder['encoder'])
+        if pretrained_decoder is not None:
+            print('Loading pretrained decoder parameters.')
+            model.decoder.load_state_dict(pretrained_decoder['decoder']) 
     else:
         if model_opt.param_init != 0.0:
             print('Intializing model parameters.')

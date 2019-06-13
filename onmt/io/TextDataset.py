@@ -84,6 +84,8 @@ class TextDataset(ONMTDatasetBase):
               len(out_examples))
 
         def filter_pred(example):
+            #if len(example.tgt) > 500:
+            #    print(len(example.tgt))
             return 0 < len(example.src) <= src_seq_length \
                and 0 < len(example.tgt) <= tgt_seq_length
 
@@ -169,7 +171,7 @@ class TextDataset(ONMTDatasetBase):
         Yields:
             (word, features, nfeat) triples for each line.
         """
-        with codecs.open(path, "r", "utf-8") as corpus_file:
+        with codecs.open(path, "r", "utf-8", "ignore") as corpus_file:
             for i, line in enumerate(corpus_file):
                 line = line.strip().split()
                 if truncate:

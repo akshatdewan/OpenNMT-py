@@ -22,7 +22,8 @@ class AudioEncoder(nn.Module):
         super(AudioEncoder, self).__init__()
         self.num_layers = num_layers
         self.num_directions = 2 if bidirectional else 1
-        self.hidden_size = rnn_size
+        rnn_size = rnn_size // self.num_directions
+        self.hidden_size = rnn_size 
 
         self.layer1 = nn.Conv2d(1,   32, kernel_size=(41, 11),
                                 padding=(0, 10), stride=(2, 2))
@@ -66,5 +67,5 @@ class AudioEncoder(nn.Module):
         input = input.transpose(0, 2).transpose(1, 2)
 
         output, hidden = self.rnn(input)
-
+        
         return hidden, output

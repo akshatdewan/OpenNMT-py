@@ -19,6 +19,7 @@ import onmt
 import onmt.io
 import onmt.modules
 
+from memory_profiler import profile
 
 class Statistics(object):
     """
@@ -42,12 +43,13 @@ class Statistics(object):
         self.n_correct += stat.n_correct
 
     def accuracy(self):
-        return 100 * (self.n_correct / self.n_words)
+        return (float)(100 * (float(self.n_correct) / self.n_words))
 
     def xent(self):
         return self.loss / self.n_words
 
     def ppl(self):
+        #print(self.n_words)
         return math.exp(min(self.loss / self.n_words, 100))
 
     def elapsed_time(self):
@@ -236,9 +238,11 @@ class Trainer(object):
 
         return stats
 
+    #@profile
     def epoch_step(self, ppl, epoch):
         return self.optim.update_learning_rate(ppl, epoch)
 
+    #@profile
     def drop_checkpoint(self, opt, epoch, fields, valid_stats):
         """ Save a resumable checkpoint.
 
@@ -258,15 +262,36 @@ class Trainer(object):
         model_state_dict = real_model.state_dict()
         model_state_dict = {k: v for k, v in model_state_dict.items()
                             if 'generator' not in k}
+
+        ## Ha NGUYEN - modified 140618
+        real_decoder = (self.model.decoder.module
+                      if isinstance(self.model.decoder, nn.DataParallel)
+                      else self.model.decoder)
+        decoder_state_dict = real_decoder.state_dict()
+        decoder_state_dict = {k: v for k, v in decoder_state_dict.items()
+                            if 'generator' not in k}
+
+        ## Ha NGUYEN - modified 140618
+        real_encoder = (self.model.encoder.module
+                      if isinstance(self.model.encoder, nn.DataParallel)
+                      else self.model.encoder)
+        encoder_state_dict = real_encoder.state_dict()
+        encoder_state_dict = {k: v for k, v in encoder_state_dict.items()
+                            if 'generator' not in k}
+
         generator_state_dict = real_generator.state_dict()
+
         checkpoint = {
             'model': model_state_dict,
+            'encoder': encoder_state_dict,
+            'decoder': decoder_state_dict,
             'generator': generator_state_dict,
             'vocab': onmt.io.save_fields_to_vocab(fields),
             'opt': opt,
             'epoch': epoch,
             'optim': self.optim,
         }
+
         torch.save(checkpoint,
                    '%s_acc_%.2f_ppl_%.2f_e%d.pt'
                    % (opt.save_model, valid_stats.accuracy(),

@@ -110,6 +110,67 @@ def build_save_text_dataset_in_shards(src_corpus, tgt_corpus, fields,
 
     return ret_list
 
+def build_save_audio_dataset_in_shards(src_corpus, tgt_corpus, fields,
+                                      corpus_type, opt):
+
+    corpus_size = os.path.getsize(src_corpus)
+    if corpus_size > 10 * (1024**2) and opt.max_shard_size == 0:
+        print("Warning. The corpus %s is larger than 10M bytes, you can "
+              "set '-max_shard_size' to process it by small shards "
+              "to use less memory." % src_corpus)
+
+    if opt.max_shard_size != 0:
+        print(' * divide corpus into shards and build dataset separately'
+              '(shard_size = %d bytes).' % opt.max_shard_size)
+
+    ret_list = []
+    src_iter = onmt.io.ShardedAudioCorpusIterator(
+        src_corpus, opt.src_seq_length_trunc,
+        "src", opt.max_shard_size, opt.src_dir,
+        sample_rate=opt.sample_rate,
+        window_size=opt.window_size,
+        window_stride=opt.window_stride,
+        window=opt.window,
+        normalize_audio=True,
+        use_filter_pred=True)
+    tgt_iter = onmt.io.ShardedAudioCorpusIterator(
+        tgt_corpus, opt.tgt_seq_length_trunc,
+        "tgt", opt.max_shard_size, opt.src_dir,
+        sample_rate=opt.sample_rate,
+        window_size=opt.window_size,
+        window_stride=opt.window_stride,
+        window=opt.window,
+        normalize_audio=True,
+        use_filter_pred=True,
+        assoc_iter=src_iter)
+
+    index = 0
+    while not src_iter.hit_end():
+        index += 1
+        print(index)
+        dataset = onmt.io.AudioDataset(
+            fields, src_iter, tgt_iter,
+            src_iter.num_feats, tgt_iter.num_feats,
+            tgt_seq_length=opt.tgt_seq_length,
+            sample_rate=opt.sample_rate,
+            window_size=opt.window_size,
+            window_stride=opt.window_stride,
+            window=opt.window, 
+            normalize_audio=True,
+            use_filter_pred=True)
+
+        # We save fields in vocab.pt seperately, so make it empty.
+        dataset.fields = []
+
+        pt_file = "{:s}.{:s}.{:d}.pt".format(
+            opt.save_data, corpus_type, index)
+        print(" * saving %s data shard to %s." % (corpus_type, pt_file))
+        torch.save(dataset, pt_file)
+
+        ret_list.append(pt_file)
+
+    return ret_list
+
 
 def build_save_dataset(corpus_type, fields, opt):
     assert corpus_type in ['train', 'valid']
@@ -124,6 +185,12 @@ def build_save_dataset(corpus_type, fields, opt):
     # Currently we only do preprocess sharding for corpus: data_type=='text'.
     if opt.data_type == 'text':
         return build_save_text_dataset_in_shards(
+            src_corpus, tgt_corpus, fields,
+            corpus_type, opt)
+
+    elif opt.data_type == 'audio' and opt.max_shard_size != 0:
+        print('shard')
+        return build_save_audio_dataset_in_shards(
             src_corpus, tgt_corpus, fields,
             corpus_type, opt)
 
@@ -180,10 +247,9 @@ def main():
 
     print("Building `Fields` object...")
     fields = onmt.io.get_fields(opt.data_type, src_nfeats, tgt_nfeats)
-
     print("Building & saving training data...")
     train_dataset_files = build_save_dataset('train', fields, opt)
-
+    
     print("Building & saving vocabulary...")
     build_save_vocab(train_dataset_files, fields, opt)
 
