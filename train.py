@@ -21,6 +21,9 @@ import onmt.modules
 from onmt.Utils import use_gpu
 import onmt.opts
 
+from memory_profiler import profile
+
+import pdb
 
 parser = argparse.ArgumentParser(
     description='train.py',
@@ -111,7 +114,7 @@ def report_func(epoch, batch, num_batches,
 
     return report_stats
 
-
+#@profile
 class DatasetLazyIter(object):
     """ An Ordered Dataset Iterator, supporting multiple datasets,
         and lazy loading.
@@ -174,6 +177,7 @@ class DatasetLazyIter(object):
             repeat=False)
 
 
+#@profile
 def make_dataset_iter(datasets, fields, opt, is_train=True):
     """
     This returns user-defined train/validate data iterator for the trainer
@@ -248,12 +252,22 @@ def train_model(model, fields, optim, data_type, model_opt):
           (opt.epochs + 1 - opt.start_epoch, opt.start_epoch))
     print(' * batch size: %d' % opt.batch_size)
 
+
     for epoch in range(opt.start_epoch, opt.epochs + 1):
         print('')
+        print("######################################################")
+        print(epoch)        
 
         # 1. Train for one epoch on the training set.
-        train_iter = make_dataset_iter(lazily_load_dataset("train"),
-                                       fields, opt)
+        print("before load dataset")
+        train_loader = lazily_load_dataset("train")
+
+        #print("train_loader test {}".format(sys.getsizeof(next(train_loader))))
+
+        train_iter = make_dataset_iter(train_loader, fields, opt)
+        #train_iter = make_dataset_iter(lazily_load_dataset("train"),
+        #                               fields, opt)
+        print("after load dataset")
         train_stats = trainer.train(train_iter, epoch, report_func)
         print('Train perplexity: %g' % train_stats.ppl())
         print('Train accuracy: %g' % train_stats.accuracy())
@@ -265,7 +279,7 @@ def train_model(model, fields, optim, data_type, model_opt):
         valid_stats = trainer.validate(valid_iter)
         print('Validation perplexity: %g' % valid_stats.ppl())
         print('Validation accuracy: %g' % valid_stats.accuracy())
-
+        
         # 3. Log to remote server.
         if opt.exp_host:
             train_stats.log("train", experiment, optim.lr)
@@ -274,13 +288,19 @@ def train_model(model, fields, optim, data_type, model_opt):
             train_stats.log_tensorboard("train", writer, optim.lr, epoch)
             train_stats.log_tensorboard("valid", writer, optim.lr, epoch)
 
+        print("before update")
+
         # 4. Update the learning rate
         trainer.epoch_step(valid_stats.ppl(), epoch)
+
+        print("after update")
 
         # 5. Drop a checkpoint if needed.
         if epoch >= opt.start_checkpoint_at:
             trainer.drop_checkpoint(model_opt, epoch, fields, valid_stats)
 
+        print("after drop")
+        #del train_loader
 
 def check_save_model_path():
     save_model_path = os.path.abspath(opt.save_model)
@@ -315,10 +335,12 @@ def lazily_load_dataset(corpus_type):
     """
     assert corpus_type in ["train", "valid"]
 
+    #@profile
     def lazy_dataset_loader(pt_file, corpus_type):
         dataset = torch.load(pt_file)
         print('Loading %s dataset from %s, number of examples: %d' %
               (corpus_type, pt_file, len(dataset)))
+        print("train_loader test {}".format(dataset))
         return dataset
 
     # Sort the glob output by file name (by increasing indexes).
@@ -331,14 +353,17 @@ def lazily_load_dataset(corpus_type):
         pt = opt.data + '.' + corpus_type + '.pt'
         yield lazy_dataset_loader(pt, corpus_type)
 
-
 def load_fields(dataset, data_type, checkpoint):
+    """
     if checkpoint is not None:
         print('Loading vocab from checkpoint at %s.' % opt.train_from)
         fields = onmt.io.load_fields_from_vocab(
             checkpoint['vocab'], data_type)
     else:
         fields = onmt.io.load_fields_from_vocab(
+            torch.load(opt.data + '.vocab.pt'), data_type)
+    """
+    fields = onmt.io.load_fields_from_vocab(
             torch.load(opt.data + '.vocab.pt'), data_type)
     fields = dict([(k, f) for (k, f) in fields.items()
                    if k in dataset.examples[0].__dict__])
@@ -363,10 +388,10 @@ def collect_report_features(fields):
         print(' * tgt feature %d size = %d' % (j, len(fields[feat].vocab)))
 
 
-def build_model(model_opt, opt, fields, checkpoint):
+def build_model(model_opt, opt, fields, checkpoint, pretrained_encoder, pretrained_decoder):
     print('Building model...')
     model = onmt.ModelConstructor.make_base_model(model_opt, fields,
-                                                  use_gpu(opt), checkpoint)
+                                                  use_gpu(opt), checkpoint, pretrained_encoder, pretrained_decoder)
     if len(opt.gpuid) > 1:
         print('Multi gpu training: ', opt.gpuid)
         model = nn.DataParallel(model, device_ids=opt.gpuid, dim=1)
@@ -457,7 +482,6 @@ def show_optimizer_state(optim):
         print("optim.optimizer.state_dict()['param_groups'] element: " + str(
             element))
 
-
 def main():
     # Load checkpoint if we resume from a previous training.
     if opt.train_from:
@@ -467,25 +491,48 @@ def main():
         model_opt = checkpoint['opt']
         # I don't like reassigning attributes of opt: it's not clear.
         opt.start_epoch = checkpoint['epoch'] + 1
+
+        ## Ha NGUYEN - modified 140618 - Lazy for now :)
+        pretrained_encoder = None
+        pretrained_decoder = None
+    elif opt.load_encoder_from and opt.load_decoder_from:
+        print('Loading encoder from %s' % opt.load_encoder_from)
+        pretrained_encoder = torch.load(opt.load_encoder_from,
+                                map_location=lambda storage, loc: storage)
+        print('Loading decoder from %s' % opt.load_decoder_from)
+        pretrained_decoder = torch.load(opt.load_decoder_from,
+                                map_location=lambda storage, loc: storage)
+
+        ## Ha NGUYEN - modified 140618 - Lazy for now :)
+        checkpoint = None
+        model_opt = opt
     else:
         checkpoint = None
+        pretrained_encoder = None
+        pretrained_decoder = None
         model_opt = opt
 
     # Peek the fisrt dataset to determine the data_type.
     # (All datasets have the same data_type).
+    print("####### first_dataset ########")
     first_dataset = next(lazily_load_dataset("train"))
+    print("####### first_dataset ########")
     data_type = first_dataset.data_type
 
     # Load fields generated from preprocess phase.
     fields = load_fields(first_dataset, data_type, checkpoint)
+    del first_dataset
 
     # Report src/tgt features.
     collect_report_features(fields)
 
     # Build model.
-    model = build_model(model_opt, opt, fields, checkpoint)
+    model = build_model(model_opt, opt, fields, checkpoint, pretrained_encoder, pretrained_decoder)
     tally_parameters(model)
     check_save_model_path()
+
+    print("################ Debug #################")
+    print(model.state_dict())
 
     # Build optimizer.
     optim = build_optim(model, checkpoint)
@@ -496,7 +543,6 @@ def main():
     # If using tensorboard for logging, close the writer after training.
     if opt.tensorboard:
         writer.close()
-
 
 if __name__ == "__main__":
     main()

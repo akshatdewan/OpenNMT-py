@@ -72,6 +72,8 @@ class AudioDataset(ONMTDatasetBase):
 
         def filter_pred(example):
             if tgt_examples_iter is not None:
+                #if len(example.tgt) > 500:
+                #    print(len(example.tgt))
                 return 0 < len(example.tgt) <= tgt_seq_length
             else:
                 return True

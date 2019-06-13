@@ -244,6 +244,13 @@ def train_opts(parser):
                        help="""If training from a checkpoint then this is the
                        path to the pretrained model's state_dict.""")
 
+    ## Ha NGUYEN - modified 140618 - add new arguments load_encoder_from and load_decoder_from
+    group.add_argument('-load_encoder_from', default='', type=str,
+                       help="""This is the path to the pretrained encoder state_dict.""")
+
+    group.add_argument('-load_decoder_from', default='', type=str,
+                       help="""This is the path to the pretrained decoder state_dict.""") 
+
     # Pretrained word vectors
     group.add_argument('-pre_word_vecs_enc',
                        help="""If a valid path is specified, then this will load

@@ -84,6 +84,8 @@ class TextDataset(ONMTDatasetBase):
               len(out_examples))
 
         def filter_pred(example):
+            #if len(example.tgt) > 500:
+            #    print(len(example.tgt))
             return 0 < len(example.src) <= src_seq_length \
                and 0 < len(example.tgt) <= tgt_seq_length
 
