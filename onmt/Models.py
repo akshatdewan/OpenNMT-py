@@ -380,7 +380,7 @@ class StdRNNDecoder(RNNDecoderBase):
         """
         assert not self._copy  # TODO, no support yet.
         assert not self._coverage  # TODO, no support yet.
-
+        
         # Initialize local and return variables.
         attns = {}
         emb = self.embeddings(tgt)
@@ -463,6 +463,7 @@ class InputFeedRNNDecoder(RNNDecoderBase):
         See StdRNNDecoder._run_forward_pass() for description
         of arguments and return values.
         """
+        
         # Additional args check.
         input_feed = state.input_feed.squeeze(0)
         input_feed_batch, _ = input_feed.size()
@@ -608,7 +609,7 @@ class DecoderState(object):
     def detach(self):
         for h in self._all:
             if h is not None:
-                h.detach_()
+                h.detach()
 
     def beam_update(self, idx, positions, beam_size):
         for e in self._all:

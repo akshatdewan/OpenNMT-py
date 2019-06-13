@@ -19,6 +19,7 @@ import onmt
 import onmt.io
 import onmt.modules
 
+from memory_profiler import profile
 
 class Statistics(object):
     """
@@ -42,12 +43,13 @@ class Statistics(object):
         self.n_correct += stat.n_correct
 
     def accuracy(self):
-        return 100 * (self.n_correct / self.n_words)
+        return (float)(100 * (float(self.n_correct) / self.n_words))
 
     def xent(self):
         return self.loss / self.n_words
 
     def ppl(self):
+        #print(self.n_words)
         return math.exp(min(self.loss / self.n_words, 100))
 
     def elapsed_time(self):
@@ -236,9 +238,11 @@ class Trainer(object):
 
         return stats
 
+    #@profile
     def epoch_step(self, ppl, epoch):
         return self.optim.update_learning_rate(ppl, epoch)
 
+    #@profile
     def drop_checkpoint(self, opt, epoch, fields, valid_stats):
         """ Save a resumable checkpoint.
 

@@ -13,6 +13,7 @@ from onmt.io.TextDataset import TextDataset
 from onmt.io.ImageDataset import ImageDataset
 from onmt.io.AudioDataset import AudioDataset
 
+from memory_profiler import profile
 
 def _getstate(self):
     return dict(self.__dict__, stoi=dict(self.stoi))
@@ -353,7 +354,6 @@ def _make_examples_nfeats_tpl(data_type, src_path, src_dir,
                 normalize_audio)
 
     return src_examples_iter, num_src_feats
-
 
 class OrderedIterator(torchtext.data.Iterator):
     def create_batches(self):

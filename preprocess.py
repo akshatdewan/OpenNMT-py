@@ -11,7 +11,6 @@ import torch
 import onmt.io
 import onmt.opts
 
-
 def check_existing_pt_files(opt):
     # We will use glob.glob() to find sharded {train|valid}.[0-9]*.pt
     # when training, so check to avoid tampering with existing pt files
